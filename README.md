@@ -1,6 +1,6 @@
-**ROADSoS v3 - AI-Powered Road Safety 🚑**
+ROADSoS v3 - AI-Powered Road Safety 🚑
 
-IITM National Road Safety Hackathon 2026
+
 
  🚀 Live Demo - Click to Test
 [https://saurav25bsa10125.github.io/RoadSoS/]

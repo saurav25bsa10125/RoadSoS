@@ -27,5 +27,5 @@ On-device TinyML AI detects crash via phone sensors + mic → Auto SOS to 112 in
 5. Hazard Reporting:** Crowdsourced pothole/accident alerts
 
  🏆 Team : SKY39XAI
-Saurav Kumar
+Developer : Saurav Kumar
 Contact: [stevensaurabh22@gmail.com]

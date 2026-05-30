@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ROADSoS  - AI Powered</title>
+    <link rel="manifest" href="data:application/json,{'name':'ROADSoS','short_name':'ROADSoS','start_url':'.','display':'standalone','background_color':'%230a0a0a','theme_color':'%23ff2b2b','icons':[{'src':'https://cdn-icons-png.flaticon.com/512/599502.png','sizes':'192x192'}]}">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <style>
+        :root { --bg: #0a0a0a; --card: #1a1a1a; --text: #fff; --accent: #ff2b2b; --green: #00d084; --blue: #4db8ff; }
+        body.light { --bg: #f5f5f5; --card: #fff; --text: #111; }
+        body { font-family: Arial, sans-serif; background: var(--bg); color: var(--text); margin: 0; transition: 0.3s; }
+      .topbar,.bottom-nav { padding: 12px; background: var(--card); display: flex; justify-content: space-between; align-items: center; position: sticky; z-index: 10; }
+      .topbar { top: 0; }
+      .bottom-nav { position: fixed; bottom: 0; width: 100%; box-sizing: border-box; }
+      .bottom-nav div { cursor: pointer; padding: 4px 8px; font-size: 11px; text-align: center; }
+      .services-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; padding: 16px; }
+      .nearby-list { padding: 16px 16px 90px; display: flex; flex-direction: column; gap: 10px; }
+      .service-card,.nearby-item { background: var(--card); padding: 12px; border-radius: 12px; cursor: pointer; font-size: 14px; }
+      .service-card { text-align: center; }
+      .nearby-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+      .sos-btn { width: 100%; padding: 18px; background: var(--accent); color: #fff; border: none; font-size: 22px; border-radius: 50px; cursor: pointer; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% {box-shadow: 0 0 0 0 rgba(255,43,43,0.7)} 70% {box-shadow: 0 0 0 15px rgba(255,43,43,0)} 100% {box-shadow: 0 0 rgba(255,43,43,0)} }
+      .call-btn { background: var(--green); border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; margin-left: 4px; color: #000; font-weight: bold; }
+      .loc { font-size: 11px; color: #aaa; margin-top: 8px; }
+        #map { height: 260px; margin: 16px; border-radius: 12px; z-index: 1; }
+        a { color: var(--blue); }
+      .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.95); display: none; z-index: 100; }
+      .modal-overlay.open { display: flex; align-items: center; justify-content: center; }
+      .modal { background: var(--card); padding: 20px; width: 90%; max-width: 400px; border-radius: 20px; text-align: center; max-height: 80vh; overflow-y: auto; }
+      .modal a,.modal button { display: block; padding: 12px 0; font-size: 18px; text-decoration: none; width: 100%; margin: 5px 0; border-radius: 10px; border: none; cursor: pointer; }
+      .countdown { font-size: 48px; color: var(--accent); margin: 10px 0; }
+      .icon-btn { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text); }
+      .badge { background: var(--accent); color: #fff; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 4px; }
+       #dashcamPreview { width: 100%; border-radius: 12px; display: none; margin-bottom: 10px; }
+      .first-aid { background: #ff2b2b; color: #fff; padding: 16px; border-radius: 12px; text-align: left; }
+      .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+      .status-live { background: var(--green); }
+      .status-off { background: #666; }
+      .profile-view p { margin: 8px 0; text-align: left; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div>ROADSoS <span class="badge">AI v3.1</span></div>
+        <div>
+            <button class="icon-btn" onclick="toggleDashcam()" title="Dashcam">📹</button>
+            <button class="icon-btn" onclick="startVoice()" title="Voice">🎤</button>
+            <button class="icon-btn" onclick="toggleTheme()" title="Theme">🌓</button>
+            <span id="status"><span class="status-dot status-off"></span>OFF</span>
+        </div>
+    </div>
+
+    <div style="padding: 16px">
+        <video id="dashcamPreview" autoplay muted playsinline></video>
+        <button class="sos-btn" onclick="openSOS()">🆘 EMERGENCY SOS</button>
+        <div class="loc" id="coords">GPS: Initializing... | AI: <span id="aiStatus">OFF</span></div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="services-grid">
+        <div class="service-card" onclick="loadNearby('hospital')">🏥<br>Hospital</div>
+        <div class="service-card" onclick="loadNearby('amenity=police')">🚔<br>Police</div>
+        <div class="service-card" onclick="loadNearby('amenity=fuel')">⛽<br>Petrol</div>
+        <div class="service-card" onclick="loadNearby('amenity=pharmacy')">💊<br>Pharmacy</div>
+        <div class="service-card" onclick="loadNearby('shop=car_repair')">🔧<br>Rescue</div>
+        <div class="service-card" onclick="savePersonDetails()">👤<br>Profile</div>
+        <div class="service-card" onclick="startAI()">🤖<br>AI Guard</div>
+        <div class="service-card" onclick="reportHazard()">⚠️<br>Hazard</div>
+        <div class="service-card" onclick="shareSOS()">📤<br>Share SOS</div>
+    </div>
+
+    <div class="nearby-list" id="nearby-list"></div>
+
+    <div class="bottom-nav">
+        <div onclick="showHome()">🏠<br>HOME</div>
+        <div onclick="document.getElementById('map').scrollIntoView({behavior:'smooth'})">🗺️<br>MAP</div>
+        <div onclick="toggleDashcam()">📹<br>DASHCAM</div>
+        <div onclick="showPersonDetails()">👤<br>PROFILE</div>
+        <div onclick="initGPS()">📍<br>GPS</div>
+    </div>
+
+    <!-- SOS MODAL -->
+    <div class="modal-overlay" id="sos-modal">
+        <div class="modal">
+            <h2>Emergency Call</h2>
+            <a href="tel:112" style="background:#ff2b2b;color:#fff">Medical 112</a>
+            <a href="tel:108" style="background:#ff6b00;color:#fff">Ambulance 108</a>
+            <a href="tel:100" style="background:#0066ff;color:#fff">Police 100</a>
+            <a href="tel:1033" style="background:var(--green);color:#000">Highway 1033</a>
+            <button onclick="callEmergencyContact()" style="background:var(--blue);color:#fff">📞 Family Contact</button>
+            <button onclick="showFirstAid()" style="background:var(--green);color:#000">🚑 First Aid Guide</button>
+            <button onclick="closeModal()" style="background:var(--bg)">Cancel</button>
+        </div>
+    </div>
+
+    <!-- CRASH DETECTION MODAL -->
+    <div class="modal-overlay" id="crash-modal">
+        <div class="modal">
+            <h2>⚠️ CRASH DETECTED!</h2>
+            <p>AI detected impact. Calling 112 + Sharing location in:</p>
+            <div class="countdown" id="crash-countdown">10</div>
+            <p style="font-size:12px">Dashcam proof saved automatically</p>
+            <button onclick="cancelCrashSOS()" style="background:var(--green);color:#000">I'm OK, Cancel</button>
+            <button onclick="triggerCrashSOS()" style="background:#ff2b2b;color:#fff">Send SOS Now</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        // ===== GLOBAL VARS =====
+        let userLat = 28.6139, userLng = 77.2090; // Default: Delhi
+        let map, userMarker, crashTimer, lastAcc = 0, lastAccTime = 0;
+        let mediaRecorder, recordedChunks = [], dashcamStream = null, isDashcamOn = false;
+        let audioContext, analyser, micStream, aiInterval, watchId = null;
+        const nearby = document.getElementById('nearby-list');
+        const markers = [];
+        let gpsRetryCount = 0;
+
+        // ===== THEME =====
+        function toggleTheme() {
+            document.body.classList.toggle('light');
+            localStorage.setItem('theme', document.body.classList.contains('light')? 'light' : 'dark');
+        }
+        if (localStorage.getItem('theme') === 'light') document.body.classList.add('light');
+
+        // ===== PERSON DETAILS =====
+        function savePersonDetails() {
+            const old = JSON.parse(localStorage.getItem('roadsos_user') || '{}');
+            const data = {
+                name: prompt('Full Name:', old.name || ''),
+                blood: prompt('Blood Group (A+, B-, O+):', old.blood || ''),
+                phone: prompt('Your Phone:', old.phone || ''),
+                emergency: prompt('Emergency Contact Number:', old.emergency || ''),
+                vehicle: prompt('Vehicle Number:', old.vehicle || ''),
+                allergy: prompt('Allergies/Diseases:', old.allergy || '')
+            };
+            if (data.name) {
+                localStorage.setItem('roadsos_user', JSON.stringify(data));
+                alert('Profile Saved! Ab SOS ke saath medical info jayegi.');
+            }
+        }
+
+        function showPersonDetails() {
+            const data = JSON.parse(localStorage.getItem('roadsos_user') || '{}');
+            if (!data.name) {
+                nearby.innerHTML = `<div class="nearby-item"><div>No profile saved. Click "Profile" button to add.</div></div>`;
+                return;
+            }
+            nearby.innerHTML = `
+                <div class="nearby-item profile-view" style="flex-direction:column; align-items:flex-start">
+                    <h3>👤 My Emergency Profile</h3>
+                    <p><b>Name:</b> ${data.name}</p>
+                    <p><b>Blood Group:</b> ${data.blood || 'Not set'}</p>
+                    <p><b>My Phone:</b> ${data.phone || 'Not set'}</p>
+                    <p><b>Emergency Contact:</b> ${data.emergency || 'Not set'}</p>
+                    <p><b>Vehicle No:</b> ${data.vehicle || 'Not set'}</p>
+                    <p><b>Allergies:</b> ${data.allergy || 'None'}</p>
+                    <button class="call-btn" onclick="savePersonDetails()" style="width:100%;margin-top:10px">✏️ Edit Profile</button>
+                </div>`;
+        }
+
+        function callEmergencyContact() {
+            const user = JSON.parse(localStorage.getItem('roadsos_user') || '{}');
+            if (user.emergency) {
+                window.open(`sms:${user.emergency}?body=Emergency! I am at https://maps.google.com/?q=${userLat},${userLng}. Please help!`);
+            } else {
+                alert('Emergency contact not saved. Please update profile.');
+            }
+        }
+
+        // ===== DASHCAM =====
+        async function toggleDashcam() {
+            const video = document.getElementById('dashcamPreview');
+            if (!isDashcamOn) {
+                try {
+                    dashcamStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: true});
+                    video.srcObject = dashcamStream;
+                    video.style.display = 'block';
+                    mediaRecorder = new MediaRecorder(dashcamStream, {mimeType: 'video/webm'});
+                    mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
+                    mediaRecorder.start(1000);
+                    isDashcamOn = true;
+                } catch(e) { alert('Camera/Mic permission needed for Dashcam'); }
+            } else {
+                if (dashcamStream) dashcamStream.getTracks().forEach(t => t.stop());
+                video.style.display = 'none';
+                if (mediaRecorder && mediaRecorder.state!== 'inactive') mediaRecorder.stop();
+                isDashcamOn = false;
+                recordedChunks = [];
+            }
+        }
+
+        function saveDashcamVideo() {
+            if (recordedChunks.length === 0) return;
+            const blob = new Blob(recordedChunks, {type: 'video/webm'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ROADSoS_Accident_Proof_${Date.now()}.webm`;
+            a.click();
+            recordedChunks = [];
+        }
+
+        // ===== AI CRASH DETECTION =====
+        async function startAI() {
+            document.getElementById('aiStatus').textContent = 'Starting...';
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({audio: true});
+                audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(micStream);
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source.connect(analyser);
+
+                aiInterval = setInterval(() => {
+                    const data = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(data);
+                    const avg = data.reduce((a,b) => a+b) / data.length;
+                    // Loud noise + high G-force = crash
+                    if (avg > 180 && lastAcc > 20 && Date.now() - lastAccTime > 3000) {
+                        lastAccTime = Date.now();
+                        showCrashModal();
+                    }
+                }, 200);
+
+                document.getElementById('aiStatus').textContent = 'ON ✓';
+                startMotionDetection();
+            } catch(e) {
+                document.getElementById('aiStatus').textContent = 'DENIED';
+                alert('Mic permission needed for AI Guard');
+            }
+        }
+
+        function startMotionDetection() {
+            if (window.DeviceMotionEvent) {
+                window.addEventListener('devicemotion', (e) => {
+                    const acc = e.acceleration;
+                    if (!acc || acc.x === null) return;
+                    lastAcc = Math.hypot(acc.x, acc.y, acc.z);
+                    if (lastAcc > 25 && Date.now() - lastAccTime > 3000) {
+                        lastAccTime = Date.now();
+                        showCrashModal();
+                    }
+                });
+            }
+        }
+
+        // ===== CRASH MODAL =====
+        function showCrashModal() {
+            if (document.getElementById('crash-modal').classList.contains('open')) return;
+            document.getElementById('crash-modal').classList.add('open');
+            if (isDashcamOn) saveDashcamVideo();
+            let count = 10;
+            document.getElementById('crash-countdown').textContent = count;
+            crashTimer = setInterval(() => {
+                count--;
+                document.getElementById('crash-countdown').textContent = count;
+                if (count <= 0) triggerCrashSOS();
+            }, 1000);
+        }
+
+        function cancelCrashSOS() {
+            clearInterval(crashTimer);
+            document.getElementById('crash-modal').classList.remove('open');
+        }
+
+        function triggerCrashSOS() {
+            clearInterval(crashTimer);
+            document.getElementById('crash-modal').classList.remove('open');
+            shareSOS(true);
+            showFirstAid();
+            window.open('tel:112');
+        }
+
+        // ===== FIRST AID =====
+        function showFirstAid() {
+            closeModal();
+            nearby.innerHTML = `
+                <div class="first-aid">
+                    <h3>🚑 FIRST AID - ACT NOW</h3>
+                    <p><b>1. Check Breathing:</b> Look, listen, feel for 10 sec</p>
+                    <p><b>2. DO NOT Move Victim:</b> Risk of spinal injury</p>
+                    <p><b>3. Stop Bleeding:</b> Press hard with clean cloth</p>
+                    <p><b>4. Recovery Position:</b> If unconscious but breathing, turn to side</p>
+                    <p><b>5. Keep Warm:</b> Use jacket/blanket</p>
+                    <p><b>6. Stay Calm:</b> Help is on the way. Location shared.</p>
+                </div>`;
+            if ('speechSynthesis' in window) {
+                const msg = new SpeechSynthesisUtterance('First aid: Check breathing. Do not move the person. Press on bleeding. Help is coming.');
+                speechSynthesis.speak(msg);
+            }
+        }
+
+        // ===== SHARE SOS =====
+        function shareSOS(isAuto = false) {
+            const user = JSON.parse(localStorage.getItem('roadsos_user') || '{}');
+            const userText = user.name?
+                `\n---VICTIM DETAILS---\nName: ${user.name}\nBlood: ${user.blood}\nPhone: ${user.phone}\nVehicle: ${user.vehicle}\nAllergy: ${user.allergy}\nEmergency Contact: ${user.emergency}`
+                : '\nProfile not set. Please update.';
+            const text = `${isAuto? '🤖 AI AUTO-SOS: CRASH DETECTED!' : '🆘 EMERGENCY SOS!'}${userText}\n\n📍 Live Location: https://maps.google.com/?q=${userLat},${userLng}\n\nSent via ROADSoS App`;
+            if (navigator.share) navigator.share({title: 'Emergency SOS', text}).catch(()=>{});
+            else prompt('Copy this message to share:', text);
+        }
+
+        // ===== HAZARD REPORTING =====
+        function reportHazard() {
+            const type = prompt('Select Hazard:\n1. Pothole\n2. Accident\n3. Fog\n4. Roadblock\n5. Landslide\nEnter number:');
+            if (!type || type < 1 || type > 5) return;
+            const types = ['', 'Pothole', 'Accident', 'Dense Fog', 'Roadblock', 'Landslide'];
+            const desc = prompt('Add details (optional):') || 'No details';
+            let hazards = JSON.parse(localStorage.getItem('hazards') || '[]');
+            hazards.push({type: types[type], desc, lat: userLat, lng: userLng, time: Date.now()});
+            localStorage.setItem('hazards', JSON.stringify(hazards.slice(-20))); // Keep last 20
+            L.marker([userLat, userLng]).addTo(map).bindPopup(`⚠️ ${types[type]}<br>${desc}`).openPopup();
+            alert('Hazard reported! Thank you for making roads safer.');
+        }
+
+        // ===== VOICE COMMANDS =====
+        function startVoice() {
+            if (!('webkitSpeechRecognition' in window)) return alert('Voice not supported in this browser');
+            const rec = new webkitSpeechRecognition();
+            rec.lang = 'en-IN';
+            rec.onstart = () => alert('Listening... Say "Hospital", "Police", or "Help"');
+            rec.onresult = e => {
+                let cmd = e.results[0][0].transcript.toLowerCase();
+                if (cmd.includes('hospital')) loadNearby('hospital');
+                else if (cmd.includes('police')) loadNearby('amenity=police');
+                else if (cmd.includes('petrol') || cmd.includes('fuel')) loadNearby('amenity=fuel');
+                else if (cmd.includes('help') || cmd.includes('sos')) openSOS();
+                else alert('Heard: ' + cmd);
+            };
+            rec.start();
+        }
+
+        // ===== MAP + NEARBY =====
+        function initMap(lat, lng) {
+            if (!map) {
+                map = L.map('map').setView([lat, lng], 14);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 16, attribution: '© OSM'}).addTo(map);
+                userMarker = L.marker([lat, lng]).addTo(map).bindPopup('You are here').openPopup();
+            } else {
+                map.setView([lat, lng], 14);
+                userMarker.setLatLng([lat, lng]);
+            }
+            loadHazards();
+        }
+
+        function loadHazards() {
+            const hazards = JSON.parse(localStorage.getItem('hazards') || '[]');
+            hazards.forEach(h => {
+                L.marker([h.lat, h.lng]).addTo(map).bindPopup(`⚠️ ${h.type}<br>${h.desc}`);
+            });
+        }
+
+        function calcDistance(lat1, lon1, lat2, lon2) {
+            return (Math.hypot(lat2 - lat1, lon2 - lon1) * 111).toFixed(1);
+        }
+
+                function clearMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers.length = 0;
+        }
+
+        async function loadNearby(kind = 'hospital') {
+            document.getElementById('map').scrollIntoView({behavior: 'smooth'});
+            nearby.innerHTML = '<div class="nearby-item">🔍 Searching nearby...</div>';
+            const query = kind.includes('=')? kind : `amenity=${kind}`;
+            const url = `https://overpass-api.de/api/interpreter?data=[out:json][timeout:25];node[${query}](around:5000,${userLat},${userLng});out;`;
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+                nearby.innerHTML = '';
+                clearMarkers();
+                if (!data.elements || data.elements.length === 0) {
+                    nearby.innerHTML = '<div class="nearby-item">❌ No results found in 5km</div>';
+                    return;
+                }
+                data.elements.slice(0, 6).forEach(el => {
+                    const name = el.tags.name || 'Unnamed Location';
+                    const dist = calcDistance(userLat, userLng, el.lat, el.lon);
+                    const eta = Math.max(2, Math.round(dist / 0.6));
+                    const marker = L.marker([el.lat, el.lon]).addTo(map).bindPopup(name);
+                    markers.push(marker);
+                    const div = document.createElement('div');
+                    div.className = 'nearby-item';
+                    div.innerHTML = `<div><b>${name}</b><br><small>${dist} km • ~${eta} min drive</small></div>
+                        <button class="call-btn" onclick="navigateTo(${el.lat}, ${el.lon}, '${name.replace(/'/g, "\\'")}')">🧭 Go</button>`;
+                    nearby.appendChild(div);
+                });
+            } catch (err) {
+                nearby.innerHTML = '<div class="nearby-item">❌ Network error. Check internet.</div>';
+            }
+        }
+
+        function navigateTo(lat, lon, name) {
+            window.open(`https://www.google.com/maps/dir/${userLat},${userLng}/${lat},${lon}`, '_blank');
+            if ('speechSynthesis' in window) {
+                speechSynthesis.speak(new SpeechSynthesisUtterance('Starting navigation to ' + name));
+            }
+        }
+
+        // ===== GPS INIT - WITH FALLBACK =====
+        function initGPS() {
+            const statusEl = document.getElementById('status');
+            const coordsEl = document.getElementById('coords');
+
+            if (!navigator.geolocation) {
+                statusEl.innerHTML = '<span class="status-dot status-off"></span>NO GPS';
+                coordsEl.textContent = 'Browser GPS not supported. Using Delhi location.';
+                initMap(userLat, userLng);
+                loadNearby('hospital');
+                return;
+            }
+
+            statusEl.innerHTML = '<span class="status-dot status-off"></span>LOCATING';
+            coordsEl.textContent = 'Requesting GPS permission...';
+
+            const options = {
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 0
+            };
+
+            // Clear old watch
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+
+            navigator.geolocation.getCurrentPosition(
+                pos => {
+                    gpsRetryCount = 0;
+                    userLat = pos.coords.latitude;
+                    userLng = pos.coords.longitude;
+                    statusEl.innerHTML = '<span class="status-dot status-live"></span>LIVE';
+                    coordsEl.textContent = `${userLat.toFixed(5)}, ${userLng.toFixed(5)} | ±${Math.round(pos.coords.accuracy)}m`;
+                    initMap(userLat, userLng);
+                    loadNearby('hospital');
+
+                    // Start continuous tracking
+                    watchId = navigator.geolocation.watchPosition(p => {
+                        userLat = p.coords.latitude;
+                        userLng = p.coords.longitude;
+                        if (userMarker) userMarker.setLatLng([userLat, userLng]);
+                        coordsEl.textContent = `${userLat.toFixed(5)}, ${userLng.toFixed(5)} | ±${Math.round(p.coords.accuracy)}m`;
+                    }, null, {enableHighAccuracy: true});
+                },
+                err => {
+                    statusEl.innerHTML = '<span class="status-dot status-off"></span>ERROR';
+                    let msg = 'Unknown error';
+                    if (err.code === 1) msg = 'Permission Denied. Allow location in browser settings.';
+                    else if (err.code === 2) msg = 'GPS Unavailable. Turn on location or go outside.';
+                    else if (err.code === 3) msg = 'Timeout. GPS signal weak.';
+
+                    coordsEl.innerHTML = `❌ ${msg}<br><button onclick="initGPS()" style="margin-top:5px;padding:5px;background:var(--green);border:none;border-radius:5px;color:#000">Retry GPS</button> <button onclick="useManualLocation()" style="margin-top:5px;padding:5px;background:var(--blue);border:none;border-radius:5px">Manual</button>`;
+
+                    // Fallback to Delhi for demo
+                    if (gpsRetryCount === 0) {
+                        initMap(userLat, userLng);
+                        loadNearby('hospital');
+                    }
+                    gpsRetryCount++;
+                },
+                options
+            );
+        }
+
+        function useManualLocation() {
+            const lat = parseFloat(prompt('Enter Latitude:', '28.6139'));
+            const lng = parseFloat(prompt('Enter Longitude:', '77.2090'));
+            if (lat && lng) {
+                userLat = lat; userLng = lng;
+                document.getElementById('status').innerHTML = '<span class="status-dot status-live"></span>MANUAL';
+                document.getElementById('coords').textContent = `${userLat}, ${userLng} | Manual Mode`;
+                initMap(userLat, userLng);
+                loadNearby('hospital');
+            }
+        }
+
+        // ===== UTILS =====
+        function openSOS() { document.getElementById('sos-modal').classList.add('open'); }
+        function closeModal() { document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open')); }
+        function showHome() { window.scrollTo({top: 0, behavior: 'smooth'}); }
+
+        // ===== PWA SERVICE WORKER =====
+        if ('serviceWorker' in navigator) {
+            const sw = `self.addEventListener('install',e=>e.waitUntil(caches.open('roadsos-v3').then(c=>c.addAll(['./']))));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))))`;
+            navigator.serviceWorker.register(URL.createObjectURL(new Blob([sw], {type: 'application/javascript'})));
+        }
+
+        // ===== INIT ON LOAD =====
+        window.addEventListener('load', () => {
+            initGPS();
+        });
+    </script>
+</body>
+</html>
